@@ -5,8 +5,8 @@
     "exit_key": "p",
     "keypress_holdtime": 0.05,
     "max_lane_cooldown": 0.02,
-    "debug_positions": "true",
-    
+    "debug_positions": "false",
+
     "use_white_tile": "true",
     "white_tile_min_confidence": 0.62,
 
@@ -15,7 +15,7 @@
 
     "use_diamond_tile": "false",
     "diamond_tile_min_confidence": 0.95,
-    
+
     "console_window_ontop": "true",
     "capture_fps": 200,
 
@@ -26,5 +26,21 @@
     "key_2": "f",
     "key_3": "j",
     "key_4": "k",
-    "key_5": "l"
+    "key_5": "l",
+
+    "use_song_charts": "true",
+    "instrument": "drums",
+    "chart_timing_offset_ms": 0,
+    "chart_nudge_step_ms": 5,
+    "chart_sync_tolerance_ms": 50,
+
+    "use_overdrive": "true",
+    "overdrive_key": "space",
+    "overdrive_timing_offset_ms": 0,
+
+    "show_overlay": "true",
+    "song_select_key": "[",
+    "sync_key": "]",
+    "nudge_earlier_key": "-",
+    "nudge_later_key": "="
 }

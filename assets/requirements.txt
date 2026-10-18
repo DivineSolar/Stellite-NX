@@ -1,9 +1,6 @@
 bettercam
-colorama
-requests
+colorama>=0.4.6
 keyboard
 numpy
 opencv-python
-psutil
-pyarmor
 pywin32
