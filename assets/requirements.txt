@@ -1,6 +1,8 @@
 bettercam
+comtypes
 colorama>=0.4.6
-keyboard
 numpy
 opencv-python
 pywin32
+winocr
+pywebview

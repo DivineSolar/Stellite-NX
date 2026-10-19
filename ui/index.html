@@ -1,0 +1,787 @@
+<!doctype html>
+<!--
+  Stellite NX - the app window
+  Part of Stellite NX by Starborne, a modified version of Stellite by Jinx (https://github.com/JinxTheCatto/Stellite).
+  Added 2026-10-18. Licensed under the GNU Affero General Public License v3 (see LICENSE), with ABSOLUTELY NO WARRANTY.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stellite</title>
+<style>
+:root {
+  --night: #120a2e;       /* stage at night */
+  --night-2: #1c0f47;
+  --violet: #3b1f8f;      /* highway */
+  --lane-line: #6c4bd8;
+  --magenta: #ff3dcb;     /* held notes, accents */
+  --cyan: #34e0ff;        /* sync, live */
+  --gold: #ffc93c;        /* selection + overdrive */
+  --ink: #f4f0ff;
+  --ink-dim: #b9addf;
+  --ink-faint: #7f72ad;
+  --good: #6dffa8;
+  --warn: #ffb347;
+  --display: "Bahnschrift", "Bahnschrift SemiBold", "DejaVu Sans Condensed", "Arial Narrow", sans-serif;
+  --text: "Segoe UI Variable Text", "Segoe UI", "DejaVu Sans", system-ui, sans-serif;
+  --slant: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background:
+    radial-gradient(1200px 520px at 28% -10%, #3a1a8a 0%, transparent 60%),
+    radial-gradient(900px 600px at 105% 110%, #4a0f5e 0%, transparent 55%),
+    var(--night);
+  color: var(--ink);
+  font: 14px/1.45 var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+
+/* ---------- top bar ---------- */
+.top { display: flex; align-items: center; gap: 18px; padding: 14px 22px 10px; }
+.word {
+  font: 700 34px/1 var(--display); font-stretch: condensed; letter-spacing: .5px;
+  transform: skewX(-9deg); text-transform: uppercase;
+  background: linear-gradient(180deg, #fff 30%, #ffd9f6 60%, var(--magenta) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 0 #2a0f63) drop-shadow(0 0 18px rgba(255,61,203,.35));
+}
+.word-sub { color: var(--ink-faint); font-size: 12.5px; margin-top: 4px; }
+.about-link { border: 0; padding: 0; background: none; color: var(--ink-dim); font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
+.about-link:hover { color: var(--ink); }
+.about p { color: var(--ink-dim); margin: 10px 0; }
+.about b { color: var(--ink); font-weight: 600; }
+.about .links { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+.about .links button { padding: 7px 14px; border: 0; background: rgba(140,110,255,.22); clip-path: var(--slant); font: 700 14px var(--display); }
+.about .links button:hover { background: rgba(140,110,255,.36); }
+.license { margin-top: 12px; max-height: 46vh; overflow: auto; padding: 12px; background: rgba(0,0,0,.28); border: 1px solid rgba(160,130,255,.2);
+  font: 12px/1.5 Consolas, "DejaVu Sans Mono", monospace; color: var(--ink-dim); white-space: pre-wrap; display: none; user-select: text; }
+.license.show { display: block; }
+.spacer { flex: 1; }
+.caps {
+  display: flex; align-items: center; gap: 10px; padding: 9px 18px 9px 16px;
+  clip-path: var(--slant); background: rgba(255,255,255,.06); color: var(--ink-dim);
+  font-weight: 600;
+}
+.caps .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-faint); }
+.caps.on { background: linear-gradient(90deg, rgba(109,255,168,.22), rgba(52,224,255,.16)); color: #e9fff3; }
+.caps.on .dot { background: var(--good); box-shadow: 0 0 0 0 rgba(109,255,168,.7); animation: pulse 1.6s infinite; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 9px rgba(109,255,168,0); } 100% { box-shadow: 0 0 0 0 rgba(109,255,168,0); } }
+
+/* ---------- layout ---------- */
+.main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); gap: 18px; padding: 4px 22px 18px; min-height: 0; }
+.left { display: grid; grid-template-rows: 1fr auto auto; gap: 14px; min-height: 0; }
+.right { display: grid; grid-auto-rows: max-content; align-content: start; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 2px; }
+
+/* ---------- hero: the highway ---------- */
+.stage {
+  position: relative; min-height: 330px; overflow: hidden;
+  border: 1px solid rgba(160,130,255,.25);
+  background: linear-gradient(180deg, #0c0626 0%, #170b3d 55%, #24104f 100%);
+  border-radius: 4px;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.np { position: absolute; left: 22px; top: 18px; right: 22px; display: flex; align-items: flex-start; gap: 16px; }
+.np-text { min-width: 0; }
+.np-artist { color: var(--ink-dim); font: 600 15px/1.2 var(--display); letter-spacing: .4px; }
+.np-title {
+  font: 700 46px/1 var(--display); font-stretch: condensed; text-transform: uppercase;
+  transform: skewX(-8deg); transform-origin: left; margin-top: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  text-shadow: 0 3px 0 #2a0f63, 0 0 24px rgba(52,224,255,.25);
+}
+.np-empty .np-title { color: var(--ink-faint); text-shadow: none; }
+.np-timer { margin-left: auto; text-align: right; flex: none; }
+.timer { font: 700 52px/1 var(--display); font-variant-numeric: tabular-nums; text-shadow: 0 3px 0 #2a0f63; }
+.chip {
+  display: inline-block; margin-top: 8px; padding: 3px 12px; clip-path: var(--slant);
+  font-weight: 700; font-size: 12.5px; background: rgba(255,255,255,.1); color: var(--ink-dim);
+}
+.chip.synced { background: var(--cyan); color: #06253a; }
+.chip.loose { background: var(--warn); color: #3a1d00; }
+.chip.syncing, .chip.loading { background: rgba(52,224,255,.18); color: var(--cyan); }
+.progress { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: rgba(255,255,255,.08); }
+.progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--magenta), var(--gold)); transition: width .3s linear; }
+.od-banner {
+  position: absolute; right: 22px; bottom: 18px; padding: 6px 16px; clip-path: var(--slant);
+  background: linear-gradient(90deg, #ffde7a, var(--gold)); color: #3a2400; font: 700 15px var(--display);
+  display: none;
+}
+.od-banner.show { display: block; }
+
+/* ---------- stats strip ---------- */
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
+.stat { padding: 8px 14px; background: rgba(255,255,255,.04); }
+.stat b { display: block; font: 700 22px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.stat span { color: var(--ink-faint); font-size: 12px; }
+
+/* ---------- panels ---------- */
+.panel { background: rgba(20,10,52,.72); border: 1px solid rgba(160,130,255,.18); padding: 14px 16px; border-radius: 4px; }
+.panel h2 { margin: 0 0 10px; font: 700 19px/1 var(--display); letter-spacing: .3px; display: flex; align-items: center; gap: 10px; }
+.panel h2 .hint { margin-left: auto; font: 500 12px var(--text); color: var(--ink-faint); }
+.key {
+  display: inline-block; min-width: 26px; padding: 1px 7px; text-align: center;
+  border: 1px solid rgba(255,255,255,.22); border-bottom-width: 3px; border-radius: 4px;
+  font: 700 11.5px/1.5 var(--display); color: var(--ink-dim); background: rgba(255,255,255,.05);
+}
+.key.none { color: var(--ink-faint); border-style: dashed; }
+
+/* song */
+.search { display: flex; gap: 8px; }
+.search input {
+  flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid rgba(160,130,255,.35); background: rgba(0,0,0,.25);
+  color: var(--ink); font: 15px var(--text); border-radius: 3px;
+}
+.search input::placeholder { color: var(--ink-faint); }
+.results { margin-top: 6px; max-height: 132px; overflow: auto; }
+.results button {
+  display: flex; width: 100%; align-items: baseline; gap: 8px; padding: 6px 8px; border: 0; background: transparent; text-align: left;
+}
+.results button:hover, .results button:focus-visible { background: rgba(255,255,255,.07); }
+.results .t { font-weight: 600; }
+.results .a { color: var(--ink-faint); font-size: 12.5px; }
+.detect { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--ink-dim); font-size: 13px; }
+.detect .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* switches */
+.switch { position: relative; width: 44px; height: 24px; flex: none; border: 0; border-radius: 12px; background: rgba(255,255,255,.14); }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #d8d0f5; transition: left .15s; }
+.switch.on { background: var(--cyan); }
+.switch.on::after { left: 23px; background: #fff; }
+
+/* instruments */
+.inst-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.inst {
+  display: grid; grid-template-columns: 26px 1fr; grid-template-rows: auto auto; column-gap: 10px; row-gap: 3px;
+  align-items: center; padding: 8px 14px 8px 18px; border: 0;
+  clip-path: var(--slant); background: rgba(255,255,255,.07); text-align: left; min-height: 56px;
+}
+.inst svg { grid-row: 1 / 3; width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.inst .n { font: 700 16px/1.05 var(--display); }
+.inst .k { justify-self: start; font-size: 10.5px; padding: 0 6px; }
+.inst:hover { background: rgba(255,255,255,.12); }
+.inst.sel { background: linear-gradient(180deg, #ffe07a, var(--gold)); color: #2b1a00; }
+.inst.sel .key { color: #2b1a00; border-color: rgba(43,26,0,.4); background: rgba(255,255,255,.3); }
+.inst.na { opacity: .38; }
+
+/* overdrive */
+.od-row { display: flex; align-items: stretch; gap: 0; }
+.seg { flex: 1; padding: 11px 10px; border: 0; background: rgba(255,255,255,.07); font: 700 17px var(--display); clip-path: var(--slant); }
+.seg + .seg { margin-left: -4px; }
+.seg.sel.manual { background: linear-gradient(180deg, #8f6bff, #6a45e6); }
+.seg.sel.auto { background: linear-gradient(180deg, #ffe07a, var(--gold)); color: #2b1a00; }
+.od-note { margin-top: 8px; color: var(--ink-dim); font-size: 13px; min-height: 19px; }
+
+/* timing */
+.timing { display: flex; align-items: center; gap: 8px; }
+.timing button { padding: 8px 12px; border: 0; background: rgba(255,255,255,.08); clip-path: var(--slant); font-weight: 700; }
+.timing button:hover { background: rgba(255,255,255,.15); }
+.offset { flex: 1; text-align: center; font: 700 26px/1 var(--display); font-variant-numeric: tabular-nums; }
+.offset small { display: block; font: 500 12px var(--text); color: var(--ink-faint); margin-top: 4px; }
+
+/* activity */
+.feed { overflow: auto; min-height: 0; font-size: 13px; }
+.feed div { padding: 3px 0; color: var(--ink-dim); border-bottom: 1px solid rgba(255,255,255,.04); }
+.feed time { color: var(--ink-faint); font-variant-numeric: tabular-nums; margin-right: 8px; }
+.bottom-row { display: grid; grid-template-columns: 1fr auto; gap: 14px; min-height: 0; }
+.ghost { padding: 10px 22px; border: 0; background: rgba(140,110,255,.22); clip-path: var(--slant); font: 700 15px var(--display); }
+.ghost:hover { background: rgba(140,110,255,.36); }
+
+/* hotkeys drawer */
+.drawer { position: fixed; inset: 0; display: none; background: rgba(8,4,24,.72); }
+.drawer.open { display: block; }
+.sheet {
+  position: absolute; right: 0; top: 0; bottom: 0; width: min(560px, 100%); overflow: auto;
+  background: linear-gradient(180deg, #1d0f4c, #140a35); border-left: 1px solid rgba(160,130,255,.3); padding: 22px 24px;
+}
+.sheet h2 { margin: 0; font: 700 28px/1 var(--display); transform: skewX(-8deg); transform-origin: left; }
+.sheet p { color: var(--ink-dim); margin: 8px 0 16px; }
+.group { margin-top: 16px; color: var(--ink-faint); font: 700 15px var(--display); }
+.hk { display: flex; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.hk span { flex: 1; }
+.hk button { min-width: 92px; padding: 5px 10px; border: 1px solid rgba(255,255,255,.22); border-bottom-width: 3px; border-radius: 4px; background: rgba(255,255,255,.05); font: 700 13px var(--display); }
+.hk button.listen { border-color: var(--gold); color: var(--gold); }
+.close { position: absolute; right: 18px; top: 18px; border: 0; background: transparent; font-size: 22px; color: var(--ink-dim); }
+
+/* settings sheet: tabs */
+.tabs { display: flex; gap: 0; margin: 16px 0 4px; }
+.tab { flex: 1; padding: 9px 10px; border: 0; background: rgba(255,255,255,.07); clip-path: var(--slant); font: 700 16px var(--display); color: var(--ink-dim); }
+.tab + .tab { margin-left: -4px; }
+.tab.sel { background: linear-gradient(180deg, #ff6fdc, var(--magenta)); color: #fff; }
+.pane { display: none; }
+.pane.show { display: block; }
+.sheet-msg { min-height: 22px; margin: 6px 0 0; font-size: 13px; color: var(--ink-faint); }
+.sheet-msg.bad { color: #ffb3d1; }
+.sheet-msg.good { color: var(--good); }
+
+/* lane keys: pads in the lane colors of the highway */
+.lane-pads { display: grid; gap: 8px; margin-top: 12px; perspective: 600px; }
+.lane-pads.n5 { grid-template-columns: repeat(5, 1fr); }
+.lane-pads.n4 { grid-template-columns: repeat(4, 1fr); }
+.pad {
+  --c: #6dff8a; position: relative; height: 92px; border: 0; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.1));
+  box-shadow: inset 0 -5px 0 var(--c), inset 0 0 0 1px rgba(255,255,255,.12);
+  transform: rotateX(18deg); transform-origin: bottom;
+  display: grid; place-items: center; align-content: center; gap: 2px;
+}
+.pad b { font: 700 32px/1 var(--display); color: #fff; text-shadow: 0 0 14px var(--c); }
+.pad span { font-size: 11.5px; color: var(--ink-faint); }
+.pad:hover { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.16)); }
+.pad.listen { box-shadow: inset 0 -5px 0 var(--gold), 0 0 0 2px var(--gold); }
+.pad.listen b { font-size: 15px; color: var(--gold); text-shadow: none; }
+.pad:nth-child(1) { --c: #5dff7e; } .pad:nth-child(2) { --c: #ff4d6d; } .pad:nth-child(3) { --c: #ffd84a; }
+.pad:nth-child(4) { --c: #4db2ff; } .pad:nth-child(5) { --c: #ff9a3c; }
+.lane-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.lane-row .od-row { flex: none; width: 210px; }
+.lane-row .seg { padding: 7px 10px; font-size: 15px; }
+.seg.sel.pick { background: linear-gradient(180deg, #ff6fdc, var(--magenta)); color: #fff; }
+.set { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.set .lbl { flex: 1; min-width: 0; }
+.set .lbl small { display: block; color: var(--ink-faint); font-size: 12.5px; margin-top: 2px; }
+.set .hkb { min-width: 110px; padding: 6px 10px; border: 1px solid rgba(255,255,255,.22); border-bottom-width: 3px; border-radius: 4px; background: rgba(255,255,255,.05); font: 700 14px var(--display); }
+.set .hkb.listen { border-color: var(--gold); color: var(--gold); }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.stepper button { width: 34px; padding: 5px 0; border: 0; background: rgba(255,255,255,.08); clip-path: var(--slant); font-weight: 700; }
+.stepper button:hover { background: rgba(255,255,255,.16); }
+.stepper output { min-width: 66px; text-align: center; font: 700 17px var(--display); font-variant-numeric: tabular-nums; }
+.screens { display: flex; }
+.screens .seg { padding: 6px 14px; font-size: 15px; flex: none; }
+.reset { margin-top: 18px; padding: 8px 18px; border: 0; background: rgba(255,61,120,.14); color: #ffb3d1; clip-path: var(--slant); font: 700 14px var(--display); }
+.reset:hover { background: rgba(255,61,120,.26); }
+
+.error { color: #ffd0e0; background: rgba(255,61,120,.18); padding: 8px 12px; margin: 0 22px 8px; display: none; }
+.error.show { display: block; }
+
+@media (prefers-reduced-motion: reduce) { .caps.on .dot { animation: none; } .progress i { transition: none; } }
+@media (max-width: 980px) { .main { grid-template-columns: 1fr; overflow: auto; } body { overflow: auto; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div>
+      <div class="word">Stellite</div>
+      <div class="word-sub">Stellite NX by Starborne, an unofficial version of Stellite by jinxthecat_ &middot; <button class="about-link" id="openAbout">About &amp; license</button></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="caps" id="caps"><span class="dot"></span><span id="capsText">Starting…</span></div>
+  </header>
+  <div class="error" id="error"></div>
+
+  <main class="main">
+    <section class="left">
+      <div class="stage" id="stage">
+        <canvas id="hw"></canvas>
+        <div class="np np-empty" id="np">
+          <div class="np-text">
+            <div class="np-artist" id="artist">Waiting for a song</div>
+            <div class="np-title" id="title">No song yet</div>
+          </div>
+          <div class="np-timer">
+            <div class="timer" id="timer">-:--</div>
+            <div class="chip" id="chip">Screen only</div>
+          </div>
+        </div>
+        <div class="od-banner" id="odBanner"></div>
+        <div class="progress"><i id="prog"></i></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="sPress">0</b><span>Presses</span></div>
+        <div class="stat"><b id="sHold">0</b><span>Holds</span></div>
+        <div class="stat"><b id="sLift">0</b><span>Lifts</span></div>
+        <div class="stat"><b id="sFps">0</b><span>Frames / s</span></div>
+        <div class="stat"><b id="sDet">0</b><span>Read ms</span></div>
+      </div>
+      <div class="bottom-row">
+        <div class="panel feed" id="feed" aria-live="polite"></div>
+        <div style="display:grid; gap:8px; align-content:start">
+          <button class="ghost" id="openKeys">Controls</button>
+          <button class="ghost" id="openOpts">Settings</button>
+          <button class="ghost" id="syncBtn">Sync on GO</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="right">
+      <div class="panel">
+        <h2>Song <span class="hint" id="songCount"></span></h2>
+        <div class="search"><input id="q" placeholder="Search a song or artist" autocomplete="off" spellcheck="false"></div>
+        <div class="results" id="results"></div>
+        <div class="detect">
+          <button class="switch" id="detectSw" aria-label="Find the song on screen"></button>
+          <span class="what" id="detectText">Find the song on screen</span>
+          <span class="key" id="kDetect"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Instrument <span class="hint">Next: <span class="key" id="kNext"></span></span></h2>
+        <div class="inst-grid" id="insts"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Overdrive <span class="hint"><span class="key" id="kOd"></span> switches</span></h2>
+        <div class="od-row">
+          <button class="seg manual" id="odManual">Manual</button>
+          <button class="seg auto" id="odAuto">Auto</button>
+        </div>
+        <div class="od-note" id="odNote"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Timing</h2>
+        <div class="timing">
+          <button data-nudge="-5">−5</button><button data-nudge="-1">−1</button>
+          <div class="offset"><span id="offset">0 ms</span><small id="offsetWords">Notes play on time</small></div>
+          <button data-nudge="1">+1</button><button data-nudge="5">+5</button>
+        </div>
+        <div class="od-note">Getting Goods? Move notes earlier until they turn Perfect.</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="sheet" role="dialog" aria-label="Controls and settings">
+    <button class="close" id="closeKeys" aria-label="Close">✕</button>
+    <h2 id="sheetTitle">Controls</h2>
+    <div class="tabs" role="tablist">
+      <button class="tab" data-tab="keys" role="tab">Your keys</button>
+      <button class="tab" data-tab="hotkeys" role="tab">Hotkeys</button>
+      <button class="tab" data-tab="opts" role="tab">Settings</button>
+      <button class="tab" data-tab="about" role="tab">About</button>
+    </div>
+    <div class="sheet-msg" id="sheetMsg" aria-live="polite"></div>
+
+    <div class="pane" id="pane-keys">
+      <p>Set these to the keys you play Festival with in Fortnite (Settings, Keyboard Controls). Click a lane, then press its key. Esc cancels.</p>
+      <div class="lane-row">
+        <span class="lbl">Highway</span>
+        <div class="od-row" id="laneSeg">
+          <button class="seg" data-lanes="5">5 lanes</button>
+          <button class="seg" data-lanes="4">4 lanes</button>
+        </div>
+      </div>
+      <div class="lane-pads n5" id="pads"></div>
+      <div style="margin-top:14px">
+        <div class="set">
+          <div class="lbl">Play / pause<small id="playHelp">Caps Lock on means playing. Pick another key to switch playing on and off with it instead; Backspace goes back to Caps Lock.</small></div>
+          <button class="hkb" data-key="play" id="playKey"></button>
+        </div>
+        <div class="set">
+          <div class="lbl">Overdrive<small>The key Fortnite activates overdrive with. Used when overdrive is on Auto.</small></div>
+          <button class="hkb" data-key="od" id="odKey"></button>
+        </div>
+      </div>
+      <button class="reset" id="resetKeys">Reset all keys and hotkeys</button>
+    </div>
+
+    <div class="pane" id="pane-hotkeys">
+      <p>Click an action, then press the key you want. Backspace clears it, Esc cancels. Hotkeys work while Fortnite is focused.</p>
+      <div id="hkList"></div>
+    </div>
+
+    <div class="pane about" id="pane-about">
+      <p><b id="aboutVersion">Stellite NX</b> by <b>Starborne</b> is an unofficial, modified version of <b>Stellite</b> by <b>Jinx</b> (jinxthecat_), whose overdrive features Jinx built with <b>theyhating</b>. It is not made or endorsed by Jinx or theyhating, and it is not affiliated with Epic Games.</p>
+      <p>Stellite &copy; Jinx and the Stellite contributors; overdrive by Jinx and theyhating. Stellite NX adds this app, automatic song detection and the lift (diamond) note fix, &copy; 2026 Starborne.
+        Chart reading and the in-game overlay are based on Festival OD Coach by Aknownthreat (GPL-3.0). Song charts and overdrive paths come from fnfpaths, drawn with CHOpt.</p>
+      <p>This program is free software: you can share and change it under the terms of the <b>GNU Affero General Public License, version 3</b>.
+        It comes with <b>ABSOLUTELY NO WARRANTY</b>. Anyone who gets this app can also get its full source code: <span id="sourceWhere">it is in the Stellite-NX source zip that comes with it</span>.</p>
+      <p>Using an autoplayer in Fortnite can break Epic's rules. It's your account and your call. Like the original, this project is for educational purposes.</p>
+      <div class="links">
+        <button id="showLicense">Read the license</button>
+        <button id="openUpstream">Original Stellite</button>
+        <button id="openSource" hidden>Source code</button>
+      </div>
+      <div class="license" id="licenseText" tabindex="0"></div>
+    </div>
+
+    <div class="pane" id="pane-opts">
+      <div class="set">
+        <div class="lbl">In-game song timer<small>The countdown and chart status drawn over Fortnite.</small></div>
+        <button class="switch" id="optOverlay" aria-label="In-game song timer"></button>
+      </div>
+      <div class="set">
+        <div class="lbl">Fill in missed notes<small>Press chart notes the screen didn't catch, only while the chart and the screen agree.</small></div>
+        <button class="switch" id="optFill" aria-label="Fill in missed notes"></button>
+      </div>
+      <div class="set">
+        <div class="lbl">Overdrive timing<small>Shift the automatic overdrive press. Negative is earlier.</small></div>
+        <div class="stepper"><button data-odoff="-10">−</button><output id="odOff">0 ms</output><button data-odoff="10">+</button></div>
+      </div>
+      <div class="set">
+        <div class="lbl">Look for the song every<small id="everyHelp">How often the screen is read while no song is playing.</small></div>
+        <div class="stepper"><button data-every="-0.25">−</button><output id="every">0.25 s</output><button data-every="0.25">+</button></div>
+      </div>
+      <div class="set">
+        <div class="lbl">Get every chart ready ahead of time<small id="prepHelp">Downloads and reads the charts for your instrument once, in the background, so detected songs load instantly.</small></div>
+        <button class="switch" id="optPrep" aria-label="Get every chart ready ahead of time"></button>
+      </div>
+      <div class="set">
+        <div class="lbl">Fortnite is on<small>The screen Stellite reads notes from.</small></div>
+        <div class="screens" id="screens">
+          <button class="seg" data-mon="0">Screen 1</button><button class="seg" data-mon="1">Screen 2</button><button class="seg" data-mon="2">Screen 3</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const INSTRUMENTS = [
+  ["lead", "Lead"], ["bass", "Bass"], ["drums", "Drums"],
+  ["vocals", "Vocals"], ["pro_lead", "Pro Lead"], ["pro_bass", "Pro Bass"],
+];
+const ICONS = {
+  lead: '<path d="M19 3l2 2-6.5 6.5"/><path d="M14.5 9.5c-1.6-.6-3.3.2-4 1.7-.4.8-1.3 1-2.1 1.2-2 .4-3.4 2.3-3 4.4.4 2.1 2.4 3.6 4.5 3.2 1.6-.3 2.6-1.6 2.9-3.1.2-.9.6-1.6 1.4-2 1.5-.8 2.1-2.6 1.3-4.1"/><circle cx="9.5" cy="15.5" r="1.3"/>',
+  bass: '<path d="M20 2l2 2-7.5 7.5"/><path d="M14.5 9.5c-1.8-.8-3.8.1-4.5 1.9-.3.7-1 1.1-1.8 1.2-2.4.3-4.2 2.4-3.9 4.8.3 2.4 2.6 4.1 5 3.7 1.8-.3 3-1.8 3.2-3.5.1-.8.5-1.5 1.2-1.9 1.7-.9 2.4-3 1.6-4.7"/><path d="M8 15l2 2"/>',
+  drums: '<ellipse cx="12" cy="9" rx="8" ry="3"/><path d="M4 9v7c0 1.7 3.6 3 8 3s8-1.3 8-3V9"/><path d="M7 3l4 5M17 3l-4 5"/>',
+  vocals: '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21M8.5 21h7"/>',
+  pro_lead: '<path d="M19 3l2 2-6.5 6.5"/><path d="M14.5 9.5c-1.6-.6-3.3.2-4 1.7-.4.8-1.3 1-2.1 1.2-2 .4-3.4 2.3-3 4.4.4 2.1 2.4 3.6 4.5 3.2 1.6-.3 2.6-1.6 2.9-3.1.2-.9.6-1.6 1.4-2 1.5-.8 2.1-2.6 1.3-4.1"/><path d="M3 4l1.2 2.4L6.8 7 4.8 8.6l.4 2.6L3 10l-2.2 1.2.4-2.6L-.8 7l2.6-.6z" transform="translate(1 0) scale(.8)"/>',
+  pro_bass: '<path d="M20 2l2 2-7.5 7.5"/><path d="M14.5 9.5c-1.8-.8-3.8.1-4.5 1.9-.3.7-1 1.1-1.8 1.2-2.4.3-4.2 2.4-3.9 4.8.3 2.4 2.6 4.1 5 3.7 1.8-.3 3-1.8 3.2-3.5.1-.8.5-1.5 1.2-1.9 1.7-.9 2.4-3 1.6-4.7"/><path d="M3 4l1.2 2.4L6.8 7 4.8 8.6l.4 2.6L3 10l-2.2 1.2.4-2.6L-.8 7l2.6-.6z" transform="translate(1 0) scale(.8)"/>',
+};
+const $ = (id) => document.getElementById(id);
+let api = null, S = null, meta = null, lastLog = 0, lastSearchReq = 0;
+
+// ---------- key names (same names config.json uses) ----------
+const CODE_NAMES = {
+  BracketLeft: "[", BracketRight: "]", Minus: "-", Equal: "=", Semicolon: ";", Quote: "'", Comma: ",",
+  Period: ".", Slash: "/", Backquote: "`", Backslash: "\\", Space: "space", Tab: "tab", Enter: "enter",
+  Insert: "insert", Delete: "delete", Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
+  ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+  NumpadAdd: "numadd", NumpadSubtract: "numsub", NumpadMultiply: "nummul", NumpadDivide: "numdiv", NumpadDecimal: "numdec",
+  ShiftLeft: "lshift", ShiftRight: "rshift", ControlLeft: "lctrl", ControlRight: "rctrl",
+  AltLeft: "lalt", AltRight: "ralt", CapsLock: "capslock",
+};
+function keyName(e) {
+  const c = e.code || "";
+  if (/^Key[A-Z]$/.test(c)) return c.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(c)) return c.slice(5);
+  if (/^Numpad[0-9]$/.test(c)) return "num" + c.slice(6);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(c)) return c.toLowerCase();
+  return CODE_NAMES[c] || null;
+}
+function keyLabel(k) {
+  if (!k) return "none";
+  const NAMES = {capslock: "Caps Lock", lshift: "L Shift", rshift: "R Shift", lctrl: "L Ctrl", rctrl: "R Ctrl",
+                 lalt: "L Alt", ralt: "R Alt", pageup: "Page Up", pagedown: "Page Down"};
+  if (NAMES[k]) return NAMES[k];
+  if (k.startsWith("num") && k.length > 3) return "Num " + ({add: "+", sub: "−", mul: "×", div: "÷", dec: "."}[k.slice(3)] || k.slice(3));
+  return k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1);
+}
+function setKey(el, k) { el.textContent = keyLabel(k); el.classList.toggle("none", !k); }
+
+// ---------- highway ----------
+const cv = $("hw"), cx = cv.getContext("2d");
+const glow = [0, 0, 0, 0, 0];
+let odPulse = 0;
+function drawHighway() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(r.width * dpr)) { cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); }
+  const W = cv.width, H = cv.height;
+  cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, W, H);
+  const vy = H * 0.12, by = H * 0.96, mid = W * 0.5;
+  const topW = W * 0.13, botW = Math.min(W * 0.78, H * 1.25);
+  const at = (f, y) => { const t = (y - vy) / (by - vy), w = topW + (botW - topW) * t; return mid - w / 2 + w * f; };
+  const lanes = (S && S.lanes) || [false, false, false, false, false];
+  const live = S && S.active;
+  // highway body
+  const g = cx.createLinearGradient(0, vy, 0, by);
+  g.addColorStop(0, "rgba(59,31,143,0)"); g.addColorStop(.35, "rgba(59,31,143,.55)"); g.addColorStop(1, "rgba(86,45,190,.9)");
+  cx.fillStyle = g; cx.beginPath();
+  cx.moveTo(at(0, vy), vy); cx.lineTo(at(1, vy), vy); cx.lineTo(at(1, by), by); cx.lineTo(at(0, by), by); cx.closePath(); cx.fill();
+  // overdrive aura on the edges
+  const od = S && S.overdrive_auto;
+  if (od || odPulse > 0) {
+    const a = od ? .55 + .25 * Math.sin(Date.now() / 380) : odPulse;
+    for (const side of [0, 1]) {
+      const eg = cx.createLinearGradient(0, vy, 0, by);
+      eg.addColorStop(0, "rgba(255,201,60,0)"); eg.addColorStop(1, `rgba(255,201,60,${a})`);
+      cx.strokeStyle = eg; cx.lineWidth = 6 * dpr; cx.shadowColor = "rgba(255,201,60,.9)"; cx.shadowBlur = 18 * dpr;
+      cx.beginPath(); cx.moveTo(at(side, vy), vy); cx.lineTo(at(side, by), by); cx.stroke();
+    }
+    cx.shadowBlur = 0;
+  }
+  // lane lines + scrolling beat lines
+  cx.strokeStyle = "rgba(160,130,255,.35)"; cx.lineWidth = 1.2 * dpr;
+  for (let i = 1; i < 5; i++) { cx.beginPath(); cx.moveTo(at(i / 5, vy), vy); cx.lineTo(at(i / 5, by), by); cx.stroke(); }
+  const speed = live ? 0.55 : 0.12, ph = (Date.now() / 1000 * speed) % 1;
+  for (let k = 0; k < 7; k++) {
+    const t = ((k + ph) / 7) ** 2.2, y = vy + (by - vy) * t;
+    cx.strokeStyle = `rgba(200,180,255,${.06 + .18 * t})`; cx.lineWidth = (1 + 2 * t) * dpr;
+    cx.beginPath(); cx.moveTo(at(0, y), y); cx.lineTo(at(1, y), y); cx.stroke();
+  }
+  // strike line + pads
+  const sy = H * 0.83;
+  for (let i = 0; i < 5; i++) {
+    glow[i] = lanes[i] ? 1 : Math.max(0, glow[i] - 0.08);
+    const x0 = at(i / 5, sy), x1 = at((i + 1) / 5, sy), pw = (x1 - x0) * .78, pc = (x0 + x1) / 2, ph2 = pw * .24;
+    cx.fillStyle = "rgba(255,255,255,.06)"; cx.strokeStyle = "rgba(220,205,255,.55)"; cx.lineWidth = 2 * dpr;
+    roundRect(pc - pw / 2, sy - ph2 / 2, pw, ph2, ph2 / 2); cx.fill(); cx.stroke();
+    if (glow[i] > 0) {
+      cx.save(); cx.globalAlpha = glow[i];
+      const pg = cx.createLinearGradient(0, sy - pw * 1.4, 0, sy);
+      pg.addColorStop(0, "rgba(255,61,203,0)"); pg.addColorStop(1, "rgba(255,120,225,.55)");
+      cx.fillStyle = pg; cx.fillRect(pc - pw / 2, sy - pw * 1.4, pw, pw * 1.4);
+      cx.shadowColor = "#ff3dcb"; cx.shadowBlur = 22 * dpr; cx.fillStyle = "#ffd6f5";
+      roundRect(pc - pw / 2, sy - ph2 / 2, pw, ph2, ph2 / 2); cx.fill();
+      cx.restore();
+    }
+  }
+  requestAnimationFrame(drawHighway);
+}
+function roundRect(x, y, w, h, r) { cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
+
+// ---------- instruments ----------
+function buildInstruments() {
+  $("insts").innerHTML = INSTRUMENTS.map(([id, name]) =>
+    `<button class="inst" data-inst="${id}"><svg viewBox="0 0 24 24">${ICONS[id]}</svg><span class="n">${name}</span><span class="key k" id="k_${id}"></span></button>`).join("");
+}
+$("insts").addEventListener("click", (e) => {
+  const b = e.target.closest(".inst"); if (b && api) api.set_instrument(b.dataset.inst).then(poll);
+});
+
+// ---------- render state ----------
+const STATUS = {
+  none: ["Screen only", ""], loading: ["Loading chart", "loading"], syncing: ["Lining up the chart", "syncing"],
+  synced: ["Chart synced", "synced"], loose: ["Screen leads here", "loose"],
+};
+function render() {
+  if (!S) return;
+  const caps = $("caps");
+  caps.classList.toggle("on", !!S.active);
+  const pk = S.controls ? S.controls.play_key : "capslock", caps1 = pk === "capslock";
+  $("capsText").textContent = !S.ready ? (S.error ? "Stopped" : "Starting…")
+    : S.active ? (caps1 ? "Playing — Caps Lock is on" : `Playing — ${keyLabel(pk)} pauses`)
+    : (caps1 ? "Paused — turn Caps Lock on to play" : `Paused — press ${keyLabel(pk)} to play`);
+  $("error").textContent = S.error ? "Stellite stopped: " + S.error : "";
+  $("error").classList.toggle("show", !!S.error);
+
+  const np = $("np");
+  if (S.song) {
+    np.classList.remove("np-empty");
+    $("artist").textContent = S.song.artist || "";
+    $("title").textContent = S.song.title;
+  } else {
+    np.classList.add("np-empty");
+    $("artist").textContent = S.loading ? "Loading" : S.auto_detect ? "Looking for the song on screen" : "Pick a song on the right";
+    $("title").textContent = S.loading || "No song yet";
+  }
+  $("timer").textContent = S.timer;
+  const [txt, cls] = STATUS[S.chart_status] || STATUS.none;
+  const chip = $("chip"); chip.textContent = txt; chip.className = "chip " + cls;
+  $("prog").style.width = (S.progress * 100).toFixed(2) + "%";
+  const ob = $("odBanner");
+  ob.classList.toggle("show", !!(S.overdrive_auto && S.next_od));
+  ob.textContent = S.next_od.startsWith("NOW") ? "Overdrive now" : "Next overdrive " + S.next_od;
+
+  $("sPress").textContent = S.presses; $("sHold").textContent = S.holds; $("sLift").textContent = S.lifts;
+  $("sFps").textContent = S.fps; $("sDet").textContent = S.detect_ms;
+  $("songCount").textContent = S.songs_ready ? `${S.song_count} songs` : "Loading the song list…";
+
+  const sw = $("detectSw"); sw.classList.toggle("on", S.auto_detect);
+  $("detectText").textContent = S.auto_detect
+    ? (S.detected ? "On screen: " + S.detected : "Find the song on screen")
+    : "Find the song on screen (off)";
+  setKey($("kDetect"), S.hotkeys.auto_detect);
+  setKey($("kNext"), S.hotkeys.inst_next);
+  setKey($("kOd"), S.hotkeys.overdrive_mode);
+
+  const avail = S.song ? S.song.instruments : null;
+  for (const [id] of INSTRUMENTS) {
+    const b = document.querySelector(`.inst[data-inst="${id}"]`);
+    b.classList.toggle("sel", S.instrument === id);
+    b.classList.toggle("na", !!avail && !avail.includes(id));
+    setKey($("k_" + id), S.hotkeys["inst_" + id]);
+  }
+
+  $("odManual").classList.toggle("sel", !S.overdrive_auto);
+  $("odAuto").classList.toggle("sel", S.overdrive_auto);
+  $("odNote").textContent = S.overdrive_auto
+    ? (S.next_od ? `Stellite presses ${keyLabel(S.overdrive_key)} on the fnfpaths path. Next: ${S.next_od}` : `Stellite presses ${keyLabel(S.overdrive_key)} on the fnfpaths path once the chart is synced`)
+    : "You activate overdrive yourself. Stellite never touches it";
+
+  const o = S.offset_ms;
+  $("offset").textContent = (o > 0 ? "+" : "") + o + " ms";
+  $("offsetWords").textContent = o === 0 ? "Notes play on time" : `Notes play ${Math.abs(o)} ms ${o < 0 ? "earlier" : "later"}`;
+
+  const feed = $("feed");
+  if (S.log.length && S.log[S.log.length - 1][0] !== lastLog) {
+    lastLog = S.log[S.log.length - 1][0];
+    feed.innerHTML = S.log.slice().reverse().map(([n, t, m]) => `<div><time>${t}</time>${escapeHtml(m)}</div>`).join("");
+  } else if (!S.log.length) {
+    feed.innerHTML = '<div>Turn Caps Lock on in Fortnite to start playing.</div>';
+  }
+  if (S.search_requests !== lastSearchReq) { lastSearchReq = S.search_requests; $("q").focus(); }
+  if (document.querySelector(".drawer.open")) renderSheet(false);
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+
+// ---------- song search ----------
+let searchTimer = null;
+$("q").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = $("q").value.trim();
+    if (!q || !api) { $("results").innerHTML = ""; return; }
+    const rows = await api.search(q);
+    $("results").innerHTML = rows.length ? rows.map((r) =>
+      `<button data-name="${escapeHtml(r.name)}"><span class="t">${escapeHtml(r.title)}</span><span class="a">${escapeHtml(r.artist)}</span></button>`).join("")
+      : '<div class="od-note" style="padding:4px 8px">No songs match that. Try the artist name.</div>';
+  }, 120);
+});
+// typing a song name must not fire hotkeys like - = [ or the number keys
+$("q").addEventListener("focus", () => api && api.pause_hotkeys && api.pause_hotkeys(true));
+$("q").addEventListener("blur", () => api && api.pause_hotkeys && !listening && api.pause_hotkeys(false));
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { const b = $("results").querySelector("button"); if (b) b.click(); }
+  if (e.key === "Escape") { $("q").value = ""; $("results").innerHTML = ""; $("q").blur(); }
+});
+$("results").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-name]"); if (!b || !api) return;
+  api.pick(b.dataset.name).then(poll); $("q").value = ""; $("results").innerHTML = "";
+});
+$("detectSw").addEventListener("click", () => api && api.set_auto_detect(!S.auto_detect).then(poll));
+$("odManual").addEventListener("click", () => api && api.set_overdrive_auto(false).then(poll));
+$("odAuto").addEventListener("click", () => { if (api) { odPulse = 1; api.set_overdrive_auto(true).then(poll); } });
+document.querySelectorAll("[data-nudge]").forEach((b) => b.addEventListener("click", () => api && api.nudge(+b.dataset.nudge).then(poll)));
+$("syncBtn").addEventListener("click", () => api && api.sync().then(poll));
+
+// ---------- controls sheet ----------
+let listening = null;          // {kind: "hotkey" | "lane" | "play" | "od", id, lanes}
+let tab = "keys", msgTimer = null;
+const isListening = (kind, id) => listening && listening.kind === kind && listening.id === id;
+function sheetMsg(text, kind) {
+  const m = $("sheetMsg"); m.textContent = text || ""; m.className = "sheet-msg " + (kind || "");
+  clearTimeout(msgTimer); if (text) msgTimer = setTimeout(() => sheetMsg(""), 4500);
+}
+function renderSheet(force) {
+  if (!meta || !S) return;
+  if (!force && listening) return;
+  document.querySelectorAll(".tab").forEach((t) => { t.classList.toggle("sel", t.dataset.tab === tab); t.setAttribute("aria-selected", t.dataset.tab === tab); });
+  document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("show", p.id === "pane-" + tab));
+  const C = S.controls;
+  // lane keys
+  document.querySelectorAll("#laneSeg .seg").forEach((b) => b.classList.toggle("sel", +b.dataset.lanes === C.lanes));
+  document.querySelectorAll("#laneSeg .seg").forEach((b) => b.classList.toggle("pick", +b.dataset.lanes === C.lanes));
+  const keys = C.lanes === 5 ? C.keys : C.keys_4_lane;
+  $("pads").className = "lane-pads n" + C.lanes;
+  $("pads").innerHTML = keys.map((k, i) => {
+    const on = isListening("lane", i);
+    return `<button class="pad ${on ? "listen" : ""}" data-lane="${i}" aria-label="Lane ${i + 1} key"><b>${on ? "Press a key…" : escapeHtml(keyLabel(k))}</b><span>Lane ${i + 1}</span></button>`;
+  }).join("");
+  const pb = $("playKey"), ob = $("odKey");
+  pb.textContent = isListening("play") ? "Press a key…" : keyLabel(C.play_key); pb.classList.toggle("listen", isListening("play"));
+  ob.textContent = isListening("od") ? "Press a key…" : keyLabel(C.overdrive_key); ob.classList.toggle("listen", isListening("od"));
+  // hotkeys
+  let html = "", group = "";
+  for (const [action, label, g] of meta.actions) {
+    if (g !== group) { group = g; html += `<div class="group">${g}</div>`; }
+    const k = S.hotkeys[action] || "", on = isListening("hotkey", action);
+    html += `<div class="hk"><span>${label}</span><button data-action="${action}" class="${on ? "listen" : ""}">${on ? "Press a key…" : keyLabel(k)}</button></div>`;
+  }
+  $("hkList").innerHTML = html;
+  // settings
+  $("optOverlay").classList.toggle("on", C.show_overlay);
+  $("optFill").classList.toggle("on", C.fill_in);
+  $("optPrep").classList.toggle("on", C.prepare_all);
+  $("prepHelp").textContent = "Downloads and reads the charts for your instrument once, in the background, so detected songs load instantly."
+    + (C.prep_total ? (C.prep_done >= C.prep_total ? ` All ${C.prep_total} are ready.` : ` ${C.prep_done} of ${C.prep_total} ready${C.prepare_all ? " (pauses while you play)" : ""}.`) : "");
+  $("odOff").textContent = (C.overdrive_offset_ms > 0 ? "+" : "") + C.overdrive_offset_ms + " ms";
+  $("every").textContent = C.detect_every_s + " s";
+  $("everyHelp").textContent = "How often the screen is read while no song is playing." + (C.detect_read_ms ? ` One read takes ${C.detect_read_ms} ms on this PC.` : "");
+  document.querySelectorAll("#screens .seg").forEach((b) => { b.classList.toggle("sel", +b.dataset.mon === C.monitor); b.classList.toggle("pick", +b.dataset.mon === C.monitor); });
+}
+function openSheet(which) { tab = which; $("drawer").classList.add("open"); sheetMsg(""); renderSheet(true); }
+function listen(l) { listening = l; renderSheet(true); if (api && api.pause_hotkeys) api.pause_hotkeys(true); }
+function stopListening() { listening = null; renderSheet(true); setTimeout(() => api && api.pause_hotkeys && api.pause_hotkeys(false), 400); }
+$("openKeys").addEventListener("click", () => openSheet("keys"));
+$("openOpts").addEventListener("click", () => openSheet("opts"));
+let about = null;
+$("openAbout").addEventListener("click", async () => {
+  openSheet("about");
+  if (!about && api && api.get_about) {
+    about = await api.get_about();
+    $("aboutVersion").textContent = "Stellite NX " + about.version;
+    $("licenseText").textContent = about.license;
+    if (about.source_url) {
+      $("openSource").hidden = false;
+      $("sourceWhere").textContent = "it is in the Stellite-NX source zip that comes with it, and at " + about.source_url;
+    }
+  }
+});
+$("showLicense").addEventListener("click", () => $("licenseText").classList.toggle("show"));
+$("openUpstream").addEventListener("click", () => api && api.open_url(about ? about.upstream_url : "https://github.com/JinxTheCatto/Stellite"));
+$("openSource").addEventListener("click", () => about && about.source_url && api && api.open_url(about.source_url));
+function closeDrawer() { listening = null; $("drawer").classList.remove("open"); if (api && api.pause_hotkeys) api.pause_hotkeys(false); }
+$("closeKeys").addEventListener("click", closeDrawer);
+$("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) closeDrawer(); });
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+  listening = null; tab = t.dataset.tab; renderSheet(true);
+  if (tab === "about" && !about) $("openAbout").click();
+}));
+$("hkList").addEventListener("click", (e) => { const b = e.target.closest("button[data-action]"); if (b) listen({kind: "hotkey", id: b.dataset.action}); });
+$("pads").addEventListener("click", (e) => { const b = e.target.closest(".pad"); if (b) listen({kind: "lane", id: +b.dataset.lane, lanes: S.controls.lanes}); });
+$("playKey").addEventListener("click", () => listen({kind: "play"}));
+$("odKey").addEventListener("click", () => listen({kind: "od"}));
+
+async function apply(promise, okText) {
+  try {
+    const r = await promise;
+    if (r && r.controls) { S.controls = r.controls; S.hotkeys = r.hotkeys; }
+    if (r && r.ok === false) sheetMsg(r.error, "bad"); else if (okText) sheetMsg(okText, "good");
+  } catch (err) { sheetMsg("That didn't work: " + err, "bad"); }
+  renderSheet(true); render();
+}
+$("laneSeg").addEventListener("click", (e) => { const b = e.target.closest("[data-lanes]"); if (b && api) apply(api.set_lanes(+b.dataset.lanes), `${b.dataset.lanes} lanes. The note reader restarted`); });
+$("resetKeys").addEventListener("click", () => api && apply(api.reset_keys(), "All keys and hotkeys are back to the defaults"));
+$("optOverlay").addEventListener("click", () => api && apply(api.set_setting("show_overlay", !S.controls.show_overlay)));
+$("optFill").addEventListener("click", () => api && apply(api.set_setting("fill_in", !S.controls.fill_in)));
+$("optPrep").addEventListener("click", () => api && apply(api.set_setting("prepare_all", !S.controls.prepare_all)));
+document.querySelectorAll("[data-odoff]").forEach((b) => b.addEventListener("click", () => api && apply(api.set_setting("overdrive_offset_ms", S.controls.overdrive_offset_ms + +b.dataset.odoff))));
+document.querySelectorAll("[data-every]").forEach((b) => b.addEventListener("click", () => api && apply(api.set_setting("detect_every_s", S.controls.detect_every_s + +b.dataset.every))));
+$("screens").addEventListener("click", (e) => { const b = e.target.closest("[data-mon]"); if (b && api) apply(api.set_monitor(+b.dataset.mon), `Reading screen ${+b.dataset.mon + 1}. The note reader restarted`); });
+
+window.addEventListener("keydown", async (e) => {
+  if (!listening) {
+    if (e.key === "Escape" && $("drawer").classList.contains("open")) closeDrawer();
+    return;
+  }
+  e.preventDefault();
+  const l = listening;
+  if (e.key === "Escape") { stopListening(); return; }
+  let k = e.key === "Backspace" ? "" : keyName(e);
+  if (k === null) { sheetMsg("That key can't be used. Try another one", "bad"); return; }
+  listening = null;
+  if (l.kind === "hotkey") await apply(api.set_hotkey(l.id, k));
+  else if (l.kind === "lane") {
+    if (!k) { stopListening(); sheetMsg("Every lane needs a key", "bad"); return; }
+    await apply(api.set_lane_key(l.lanes, l.id, k), `Lane ${l.id + 1} is ${keyLabel(k)}`);
+  }
+  else if (l.kind === "play") await apply(api.set_play_key(k || "capslock"), k && k !== "capslock" ? `${keyLabel(k)} now switches playing on and off` : "Caps Lock plays again");
+  else if (l.kind === "od") { if (k) await apply(api.set_overdrive_key(k), `Overdrive is ${keyLabel(k)}`); }
+  stopListening();
+});
+
+// ---------- wiring ----------
+async function poll() { if (!api) return; try { S = await api.get_state(); render(); } catch (e) {} }
+async function boot() {
+  meta = await api.get_meta();
+  await poll();
+  setInterval(poll, 120);
+}
+buildInstruments();
+requestAnimationFrame(drawHighway);
+if (window.pywebview && window.pywebview.api) { api = window.pywebview.api; boot(); }
+else window.addEventListener("pywebviewready", () => { api = window.pywebview.api; boot(); });
+</script>
+</body>
+</html>

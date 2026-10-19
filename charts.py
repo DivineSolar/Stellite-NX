@@ -2,6 +2,11 @@
 # Charts and overdrive paths are read straight from the CHOpt path images on fnfpaths (https://fnfpaths.github.io)
 # Path image reading is based on Festival OD Coach by Aknownthreat, made for the Stellite project (GPL-3.0)
 # https://github.com/Aknownthreat/-fortnite-festival-overdrive-timer
+# Modified 2026-10-18 for Stellite NX: saved path images are used right away (and refreshed in the background),
+# read charts are kept next to them, and reading happens in a separate process so playing never waits on it.
+# Song charts and overdrive in Stellite: Jinx (jinxthecat_) and theyhating. Changes for Stellite NX (C) 2026 Starborne.
+# Part of Stellite NX, a modified version of Stellite by Jinx (https://github.com/JinxTheCatto/Stellite), distributed under the GNU Affero General Public License
+# version 3 (see LICENSE); this file's GPL-3.0 parts are combined under GPL-3.0 section 13. WITHOUT ANY WARRANTY.
 
 import os
 import re
@@ -10,6 +15,7 @@ import json
 import math
 import time
 import bisect
+import hashlib
 import threading
 import unicodedata
 import urllib.parse
@@ -397,23 +403,137 @@ def parse_chart(png):
         "tempos": tempos,
     }
 
-def load_chart(song, instrument, lengths = None):
-    image_name = song["paths"][instrument]["image"]
+PARSE_VERSION = 1
+_pools = {}
+_pool_lock = threading.Lock()
+
+
+def start_parser():
+    """Start the chart reader processes early, so the first song doesn't wait for them to start. One reads
+    the chart that's wanted right now, the other gets charts ready ahead of time, so it never makes the
+    first one wait."""
+    with _pool_lock:
+        if not _pools:
+            try:
+                from concurrent.futures import ProcessPoolExecutor
+                for kind in ("now", "ahead"):
+                    _pools[kind] = ProcessPoolExecutor(max_workers=1)
+                    _pools[kind].submit(int, 0).result(timeout=60)  # spins the worker up
+            except Exception:
+                _pools.clear()
+                _pools["none"] = None  # no worker processes: read in this process
+    return "none" not in _pools
+
+
+def _parse_in_worker(png):
+    if sys.stdout is None:  # worker of the windowed app: nowhere to print to
+        sys.stdout = sys.stderr = open(os.devnull, "w")
+    return parse_chart(png)
+
+
+def parse_png(png, ahead = False):
+    """Read a path image, in a worker process when there is one (it takes about a second of CPU)."""
+    pool = _pools.get("ahead" if ahead else "now")
+    if pool is not None:
+        try:
+            return pool.submit(_parse_in_worker, png).result(timeout=120)
+        except Exception:
+            pass
+    return parse_chart(png)
+
+
+def _write(path, data, mode = "wb"):
+    # write next to it, then swap in: a chart being read at the same time never sees half a file
+    temp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    with open(temp, mode) as file:
+        if mode == "w":
+            json.dump(data, file)
+        else:
+            file.write(data)
+    os.replace(temp, path)
+
+
+def _cache_paths(image_name):
     if not IMAGE_NAME_RE.match(image_name):
         raise ValueError(f"Bad path image name {image_name}")
-    cache = os.path.join(CHARTS_FOLDER, image_name)
+    png = os.path.join(CHARTS_FOLDER, image_name)
+    return png, png[:-4] + ".chart.json"
+
+
+def read_png(png, image_name, ahead = False):
+    """Chart from a path image: the saved reading if this exact image was read before, else read it now."""
+    digest = hashlib.sha1(png).hexdigest()
+    _, saved = _cache_paths(image_name)
+    try:
+        with open(saved, "r") as file:
+            data = json.load(file)
+        if data.get("sha1") == digest and data.get("version") == PARSE_VERSION:
+            return data["chart"]
+    except Exception:
+        pass
+    chart = parse_png(png, ahead)
+    try:
+        os.makedirs(CHARTS_FOLDER, exist_ok=True)
+        _write(saved, {"sha1": digest, "version": PARSE_VERSION, "chart": chart}, "w")
+    except Exception:
+        pass
+    return chart
+
+
+def fetch_png(image_name, prefer_saved = False):
+    """(png bytes, came from the saved copy)."""
+    cache, _ = _cache_paths(image_name)
+    if prefer_saved and os.path.isfile(cache):
+        with open(cache, "rb") as file:
+            return file.read(), True
     try:
         png = http_get(PATHS_URL + urllib.parse.quote(image_name))
         os.makedirs(CHARTS_FOLDER, exist_ok=True)
-        with open(cache, "wb") as file:
-            file.write(png)
+        _write(cache, png)
+        return png, False
     except Exception as e:
         if not os.path.isfile(cache):
             raise
         print(Fore.YELLOW + f"Could not download the path image ({str(e)}), using the saved one" + Fore.RESET)
         with open(cache, "rb") as file:
-            png = file.read()
-    chart = parse_chart(png)
+            return file.read(), True
+
+
+def refresh_png(image_name):
+    """Download the path image again. True if it changed since it was saved."""
+    cache, _ = _cache_paths(image_name)
+    try:
+        with open(cache, "rb") as file:
+            old = file.read()
+    except Exception:
+        old = None
+    png = http_get(PATHS_URL + urllib.parse.quote(image_name))
+    if png == old:
+        return False
+    os.makedirs(CHARTS_FOLDER, exist_ok=True)
+    _write(cache, png)
+    read_png(png, image_name, ahead=True)
+    return True
+
+
+def is_ready(song, instrument):
+    """True if this chart is saved and already read (loads instantly)."""
+    try:
+        cache, saved = _cache_paths(song["paths"][instrument]["image"])
+        return os.path.isfile(cache) and os.path.isfile(saved)
+    except Exception:
+        return False
+
+
+def load_chart(song, instrument, lengths = None, prefer_saved = False):
+    """prefer_saved: use the saved path image if there is one (instant); call refresh_png afterwards to update it."""
+    image_name = song["paths"][instrument]["image"]
+    png, saved = fetch_png(image_name, prefer_saved)
+    chart = dict(read_png(png, image_name))
+    chart["notes"] = [tuple(n) for n in chart["notes"]]
+    chart["overdrive"] = [tuple(o) for o in chart["overdrive"]]
+    chart["tempos"] = [tuple(t) for t in chart.get("tempos", [])]
+    chart["from_saved"] = saved
     chart["name"] = song["name"]
     chart["instrument"] = instrument
     chart["path"] = song["paths"][instrument]["path"]
